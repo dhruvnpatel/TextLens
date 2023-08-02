@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation Template to create Elastic Beanstalk Application hosting Frontend
+
+Resources:
+  TextLens:
+    Type: "AWS::ElasticBeanstalk::Application"
+    Properties:
+      ApplicationName: "textLens"
+      Description: "AWS Elastic Beanstalk React Frontend Application for User Authentication"
+
+  TextLensVersion:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties:
+      ApplicationName:
+        Ref: "TextLens"
+      Description: "My application version"
+      SourceBundle:
+        S3Bucket: "b00891974-dhruvpatel"
+        S3Key: "ElasticBeanstalkFrontend/textLens.zip"
+
+  TextLensConfigurationTemplate:
+    Type: "AWS::ElasticBeanstalk::ConfigurationTemplate"
+    Properties:
+      ApplicationName:
+        Ref: "TextLens"
+      Description: "My application configuration template"
+      SolutionStackName: "64bit Amazon Linux 2 v5.8.2 running Node.js 18"
+      OptionSettings:
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "InstanceType"
+          Value: "t2.micro"
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "EC2KeyName"
+          Value: "vockey"
+        - Namespace: "aws:autoscaling:launchconfiguration"
+          OptionName: "IamInstanceProfile"
+          Value: "LabInstanceProfile"
+        - Namespace: "aws:elasticbeanstalk:environment"
+          OptionName: "ServiceRole"
+          Value: "arn:aws:iam::741574964788:role/LabRole"
+        - Namespace: "aws:elasticbeanstalk:environment"
+          OptionName: "EnvironmentType"
+          Value: "SingleInstance"
+
+  TextLensEnvironment:
+    Type: "AWS::ElasticBeanstalk::Environment"
+    Properties:
+      ApplicationName:
+        Ref: "TextLens"
+      EnvironmentName: "TextLensEnvironment"
+      TemplateName:
+        Ref: "TextLensConfigurationTemplate"
+      VersionLabel:
+        Ref: "TextLensVersion"

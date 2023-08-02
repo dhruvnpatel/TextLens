@@ -1,0 +1,268 @@
+#CloudFOrmation Script - TextLens Application
+#Author - Dhruv Patel
+#Version - v1.0
+#References: Amazon Web Services, Stack Overflow
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation Template to create DDB, Lambdas, APIs, and SNS Topics
+
+Resources:
+  SnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: "Text Lens Notification"
+      TopicName: "textLensNotification"
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: textLensDB
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  LambdaRegistration:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: textLensRegistration1
+      Handler: textLensRegistration.lambda_handler
+      Runtime: python3.10
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Code:
+        S3Bucket: b00891974-dhruvpatel
+        S3Key: LambdaFiles/textLensRegistration.zip
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME:
+            Ref: DynamoDBTable
+          SNS_TOPIC_ARN:
+            Ref: SnsTopic
+
+  LambdaLogin:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: textLensLogin1
+      Handler: textLensLogin.lambda_handler
+      Runtime: python3.10
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Code:
+        S3Bucket: b00891974-dhruvpatel
+        S3Key: LambdaFiles/textLensLogin.zip
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME:
+            Ref: DynamoDBTable
+
+  LambdaExtractText:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: textLensExtractText1
+      Handler: textLensExtractText.lambda_handler
+      Runtime: python3.10
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Code:
+        S3Bucket: b00891974-dhruvpatel
+        S3Key: LambdaFiles/textLensExtractText.zip
+
+  LambdaSendOutput:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: textLensSendOutput1
+      Handler: textLensSendOutput.lambda_handler
+      Runtime: python3.10
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Code:
+        S3Bucket: b00891974-dhruvpatel
+        S3Key: LambdaFiles/textLensSendOutput.zip
+
+  LambdaVerifyEmail:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: textLensVerifyEmail1
+      Handler: textLensVerifyEmail.lambda_handler
+      Runtime: python3.10
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Code:
+        S3Bucket: b00891974-dhruvpatel
+        S3Key: LambdaFiles/textLensVerifyEmail.zip
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: textLensAPI
+
+  LambdaLoginPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref LambdaLogin
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  ApiGatewayResourceLogin:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "login"
+
+  LoginOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResourceLogin
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE'"
+              "method.response.header.Access-Control-Allow-Origin": "'*'"
+            ResponseTemplates:
+              "application/json": ""
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          "application/json": '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": true
+            "method.response.header.Access-Control-Allow-Methods": true
+            "method.response.header.Access-Control-Allow-Origin": true
+          ResponseModels:
+            "application/json": "Empty"
+
+  ApiGatewayMethodLogin:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResourceLogin
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaLogin.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      RequestParameters:
+        method.request.querystring.name: false
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  LambdaRegistrationPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref LambdaRegistration
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*"
+
+  ApiGatewayResourceRegistration:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "registration"
+
+  RegistrationOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResourceRegistration
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+              "method.response.header.Access-Control-Allow-Methods": "'GET,POST,PUT,DELETE'"
+              "method.response.header.Access-Control-Allow-Origin": "'*'"
+            ResponseTemplates:
+              "application/json": ""
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          "application/json": '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            "method.response.header.Access-Control-Allow-Headers": true
+            "method.response.header.Access-Control-Allow-Methods": true
+            "method.response.header.Access-Control-Allow-Origin": true
+          ResponseModels:
+            "application/json": "Empty"
+
+  ApiGatewayMethodRegistration:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResourceRegistration
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaRegistration.Arn}/invocations"
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: $input.json('$')
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST, OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        RequestTemplates:
+          application/json: $input.json('$')
+      RequestParameters:
+        method.request.querystring.name: false
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+          StatusCode: "200"
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ApiGatewayMethodLogin
+      - ApiGatewayMethodRegistration
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: dev
+
+Outputs:
+  ApiEndpoint:
+    Description: URL for the API endpoint
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev"

@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation Template to create folders in an S3 bucket
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: b00891974-termassignment
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - "PUT"
+              - "POST"
+              - "DELETE"
+              - "GET"
+            AllowedOrigins:
+              - "*"
+            MaxAge: 300
+
+  CustomFolder1:
+    Type: Custom::S3Folder
+    Properties:
+      ServiceToken: !GetAtt S3FolderFunction.Arn
+      BucketName: !Ref S3Bucket
+      FolderKey: ImageData/
+
+  CustomFolder2:
+    Type: Custom::S3Folder
+    Properties:
+      ServiceToken: !GetAtt S3FolderFunction.Arn
+      BucketName: !Ref S3Bucket
+      FolderKey: ExtractedTextFromImage/
+
+  S3FolderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: textLensCreateFolders
+      Handler: index.handler
+      Role: "arn:aws:iam::741574964788:role/LabRole"
+      Runtime: python3.10
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              s3 = boto3.resource('s3')
+              bucket_name = event['ResourceProperties']['BucketName']
+              folder_key = event['ResourceProperties']['FolderKey']
+              s3.Object(bucket_name, folder_key).put()
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  S3BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "PublicListGet"
+            Effect: "Allow"
+            Principal: "*"
+            Action:
+              - "s3:GetObject"
+            Resource:
+              - !Sub "arn:aws:s3:::${S3Bucket}/*"
